@@ -1,12 +1,19 @@
-import tkinter as tk
-from tkinter import messagebox
-from threading import Thread
-from playsound import playsound
-import time
+import kivy
+from kivy.app import App
+from kivy.uix.popup import Popup
+from kivy.uix.label import Label
+from kivy.uix.boxlayout import BoxLayout
+from kivy.clock import Clock
+from kivy.properties import NumericProperty, StringProperty
+from kivy.core.audio import SoundLoader
+from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.uix.button import Button
 import sqlite3
+import time
 
+kivy.require("2.1.0")
 
-
+# Inisialisasi Database
 conn = sqlite3.connect("pomodoro_history.db")
 c = conn.cursor()
 c.execute("""
@@ -18,99 +25,102 @@ c.execute("""
 """)
 conn.commit()
 
-
-# Konfigurasi jendela utama
-root = tk.Tk()
-root.title("Pomodoro Timer")
-root.geometry("400x300")  # Ukuran jendela
-
-# Variabel global untuk kontrol timer
-running = False
-current_time = 25 * 60  # 25 menit (default Pomodoro)
-
-# Fungsi untuk menghitung mundur
-def countdown():
-    global current_time, running
-    while running and current_time >= 0:
-        mins, secs = divmod(current_time, 60)
-        timer_label.config(text=f"{mins:02d}:{secs:02d}")
-        time.sleep(1)
-        current_time -= 1
-    if current_time < 0:
-        playsound("NEGEV_ATTACK_JP.mp3")  # Ganti dengan path suara alarm
-        messagebox.showinfo("Selesai", "Waktu kerja selesai!")
-
-# Fungsi untuk tombol Start/Pause
-def start_pause():
-    global running
-    if not running:
-        running = True
-        thread = Thread(target=countdown)
-        thread.start()
-    else:
-        running = False
-
-# Fungsi untuk tombol Reset
-def reset():
-    global current_time, running
+class PomodoroScreen(Screen):
+    current_time = NumericProperty(25 * 60)  # 25 menit (dalam detik)
+    timer_text = StringProperty("25:00")
     running = False
-    current_time = 25 * 60
-    timer_label.config(text="25:00")
+    popup = None  # Menyimpan referensi popup
 
-# Membuat widget GUI
-timer_label = tk.Label(root, text="25:00", font=("Arial", 48))
-timer_label.pack(pady=20)
+    def start_pause(self):
+        self.running = not self.running
+        if self.running:
+            Clock.schedule_interval(self.countdown, 1)
+        else:
+            Clock.unschedule(self.countdown)
 
-start_button = tk.Button(root, text="Start/Pause", command=start_pause)
-start_button.pack()
+    def countdown(self, dt):
+        if self.current_time > 0:
+            self.current_time -= 1
+            mins, secs = divmod(self.current_time, 60)
+            self.timer_text = f"{mins:02d}:{secs:02d}"
+        else:
+            self.show_alert()
+            self.save_session()
 
-reset_button = tk.Button(root, text="Reset", command=reset)
-reset_button.pack()
+    def reset(self):
+        self.running = False
+        Clock.unschedule(self.countdown)
+        self.current_time = int(self.ids.work_duration.text) * 60
+        self.timer_text = f"{int(self.current_time/60):02d}:00"
 
-work_duration = tk.IntVar(value=25)  # Menit
-break_duration = tk.IntVar(value=5)  # Menit
+    def show_alert(self):
+        # Hapus sound jika ada yang masih berjalan
+        if hasattr(self, 'alert_sound') and self.alert_sound:
+            self.alert_sound.stop()
+            del self.alert_sound
+        
+        # Muat ulang suara
+        self.alert_sound = SoundLoader.load("NEGEV_ATTACK_JP.mp3")
+        if self.alert_sound:
+            self.alert_sound.loop = True  # Aktifkan looping
+            self.alert_sound.play()
+            
+            # Hentikan suara setelah 10 detik
+            Clock.schedule_once(lambda dt: self.stop_alert(), 10)
+        
+        # Tambahkan tombol "OK" untuk menghentikan suara dan menutup popup
+        content = BoxLayout(orientation='vertical')
+        label = Label(text='Waktu kerja selesai!')
+        button = Button(text='OK', size_hint=(1, 0.3))
+        button.bind(on_release=lambda instance: self.stop_alert(self.popup))  # Perubahan di sini
+        
+        content.add_widget(label)
+        content.add_widget(button)
+        
+        self.popup = Popup(  # Simpan referensi popup
+            title="Selesai",
+            content=content,
+            size_hint=(None, None),
+            size=(400, 200)
+        )
+        self.popup.open()
 
-work_entry = tk.Entry(root, textvariable=work_duration)
-work_entry.pack()
+    def stop_alert(self, popup=None):
+        if hasattr(self, 'alert_sound') and self.alert_sound:
+            self.alert_sound.stop()
+            del self.alert_sound
+        
+        if popup:
+            popup.dismiss()  # Tutup popup jika ada
 
-break_entry = tk.Entry(root, textvariable=break_duration)
-break_entry.pack()
+    def save_session(self):
+        duration = f"{int(self.current_time/60)} menit"
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        c.execute("INSERT INTO sessions (timestamp, duration) VALUES (?, ?)",
+                 (timestamp, duration))
+        conn.commit()
 
-# Ubah warna latar belakang
-root.configure(bg="#2c3e50")
+class HistoryScreen(Screen):
+    history_text = StringProperty("")
 
-# Ubah warna teks timer
-timer_label.config(fg="#ecf0f1", bg="#2c3e50")
+    def on_pre_enter(self):
+        self.update_history()
 
-# Ubah gaya tombol
-start_button.config(bg="#2ecc71", fg="white", font=("Arial", 12))
-reset_button.config(bg="#e74c3c", fg="white", font=("Arial", 12))
+    def update_history(self):
+        c.execute("SELECT * FROM sessions ORDER BY timestamp DESC")
+        rows = c.fetchall()
+        history = "\n".join([f"{row[1]} - {row[2]}" for row in rows])
+        self.history_text = history if history else "Belum ada riwayat."
 
+class PomodoroApp(App):
+    def build(self):
+        sm = ScreenManager()
+        sm.add_widget(PomodoroScreen(name="main"))
+        sm.add_widget(HistoryScreen(name="history"))
+        return sm
 
+    def on_stop(self):
+        conn.close()
 
-
-# Loop utama aplikasi
-root.mainloop()
-
-# Fungsi untuk menyimpan sesi
-def save_session(duration):
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    c.execute("INSERT INTO sessions (timestamp, duration) VALUES (?, ?)", (timestamp, duration))
-    conn.commit()
-
-# Fungsi untuk menampilkan riwayat
-def show_history():
-    history_window = tk.Toplevel(root)
-    history_window.title("Riwayat Sesi")
-    history_list = tk.Listbox(history_window, width=50)
-    history_list.pack(pady=20)
-
-    # Ambil data dari database
-    c.execute("SELECT * FROM sessions ORDER BY timestamp DESC")
-    rows = c.fetchall()
-    for row in rows:
-        history_list.insert(tk.END, f"{row[1]} - {row[2]}")
-
-# Tambahkan tombol History
-history_button = tk.Button(root, text="History", command=show_history)
-history_button.pack()
+if __name__ == "__main__":
+    PomodoroApp().run()

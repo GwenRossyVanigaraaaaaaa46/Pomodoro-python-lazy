@@ -1,0 +1,111 @@
+#:import dp kivy.metrics.dp
+#:import FadeTransition kivy.uix.screenmanager.FadeTransition
+
+<ScreenManager>:
+    transition: FadeTransition()
+
+<PomodoroScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(20)
+        spacing: dp(10)
+        canvas.before:
+            Color:
+                rgba: 0.17, 0.24, 0.31, 1  # Warna latar belakang
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        Label:
+            text: root.timer_text
+            font_size: dp(48)
+            color: 0.92, 0.94, 0.94, 1  # Warna teks timer
+
+        BoxLayout:
+            orientation: "horizontal"
+            spacing: dp(10)
+
+            Button:
+                text: "Mulai/Jeda"
+                background_color: 0.18, 0.76, 0.40, 1  # Hijau
+                on_release: root.start_pause()
+                font_size: dp(14)
+                size_hint: 0.5, 1
+
+            Button:
+                text: "Reset"
+                background_color: 0.98, 0.20, 0.20, 1  # Merah
+                on_release: root.reset()
+                font_size: dp(14)
+                size_hint: 0.5, 1
+
+        BoxLayout:
+            orientation: "horizontal"
+            spacing: dp(10)
+            padding: dp(5)
+
+            Label:
+                text: "Durasi Kerja (menit):"
+                font_size: dp(14)
+                color: 0.92, 0.94, 0.94, 1
+
+            TextInput:
+                id: work_duration
+                text: "25"
+                multiline: False
+                input_filter: "int"
+                font_size: dp(14)
+                size_hint: 0.3, 1
+
+            Label:
+                text: "Durasi Istirahat (menit):"
+                font_size: dp(14)
+                color: 0.92, 0.94, 0.94, 1
+
+            TextInput:
+                id: break_duration
+                text: "5"
+                multiline: False
+                input_filter: "int"
+                font_size: dp(14)
+                size_hint: 0.3, 1
+
+        Button:
+            text: "Lihat Riwayat"
+            background_color: 0.35, 0.45, 0.52, 1
+            on_release: app.root.current = "history"
+            font_size: dp(14)
+            size_hint: 1, 0.5
+
+<HistoryScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(20)
+        spacing: dp(10)
+        canvas.before:
+            Color:
+                rgba: 0.17, 0.24, 0.31, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+        Label:
+            text: "Riwayat Sesi"
+            font_size: dp(24)
+            color: 0.92, 0.94, 0.94, 1
+
+        ScrollView:
+            Label:
+                text: root.history_text  # Perbaikan di sini
+                font_size: dp(14)
+                color: 0.92, 0.94, 0.94, 1
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+
+        Button:
+            text: "Kembali ke Utama"
+            background_color: 0.35, 0.45, 0.52, 1
+            on_release: app.root.current = "main"
+            font_size: dp(14)
+            size_hint: 1, 0.5
